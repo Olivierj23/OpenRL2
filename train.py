@@ -30,7 +30,7 @@ def train(env, agent, n_episodes):
                 break
 
 if __name__ == "__main__":
-    env = gym.make("CartPole-v1", render_mode="human")
+    env = gym.make("Reacher-v2", render_mode="human")
     agent = RandomAgent(env.action_space.n)
 
     train(env, agent, 100000000)
