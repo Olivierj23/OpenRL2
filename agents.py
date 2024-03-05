@@ -29,7 +29,7 @@ class DeepAgent:
         return self.transform_func(raw_state)
 
     def remember(self, raw_state, action, reward, next_state, done):
-        self.memory.append((self.get_state(raw_state), action, reward, next_state, done))
+        self.memory.append((self.get_state(raw_state), action, reward, self.get_state(next_state), done))
 
     def train_long_memory(self):
         # r = max((self.big_n - self.n_episodes)/self.big_n, 0)
@@ -60,6 +60,8 @@ class DeepAgent:
 
         else:
             state0 = torch.tensor(state, dtype=torch.float)
+            state0 = torch.unsqueeze(state0, 0)
+            print(state0.shape)
             prediction = self.model(state0)
             return torch.argmax(prediction).item()
 
@@ -67,13 +69,18 @@ class DeepAgent:
 
     def train_step(self, raw_state, raw_action, reward, next_state, done):
         state = self.get_state(raw_state)
+        next_state = self.get_state(next_state)
         state = torch.tensor(state, dtype=torch.float)
         next_state = torch.tensor(next_state, dtype=torch.float)
         raw_action = torch.tensor(raw_action, dtype=torch.long)
         reward = torch.tensor(reward, dtype=torch.float)
-        done = torch.tensor(done, dtype=torch.float)
 
-        if len(state.shape) == 1:
+        done = torch.tensor(done, dtype=torch.float)
+        done = torch.unsqueeze(done, 0)
+
+
+
+        if len(done) == 1:
             state = torch.unsqueeze(state, 0)
             next_state = torch.unsqueeze(next_state, 0)
             raw_action = torch.unsqueeze(raw_action, 0)
@@ -106,8 +113,8 @@ class DeepAgent:
         # print(target, pred)
         # loss = self.criterion(target, pred)
 
-        print(Q_expected)
-        print(Q_targets.unsqueeze(1))
+        # print(Q_expected)
+        # print(Q_targets.unsqueeze(1))
         loss = self.criterion(Q_expected, Q_targets.unsqueeze(1))
         loss.backward()
         # torch.nn.utils.clip_grad_norm(self.model.parameters(), 1)

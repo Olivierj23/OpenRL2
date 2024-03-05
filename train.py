@@ -3,8 +3,7 @@ import rubiks_cube_gym
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from agents import DeepAgent, RandomAgent
-from IPython import display
-from model import Deep_QNet
+from model import Deep_QNet, DQCNN
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -130,10 +129,23 @@ def policy_train(env):
         if epoch % 100 == 0:
             print(f"{epoch} -> {np.sum(rewards)}")
 
+def image_transform(raw_image_data):
+    image_array = np.reshape(np.array(raw_image_data), (210, 160, 3))
+    image_array = np.mean(image_array, axis=2)
+
+    return np.expand_dims(image_array/np.max(image_array), axis=0)
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
-    env = gym.make("Breakout-ram-v0", render_mode="human")
-    print(env.reset()[0])
+    env = gym.make("Pong-v0", render_mode="human")
+
+    print(image_transform(env.reset()[0]))
     # agent = RandomAgent(env.action_space.n)
     # deep_qnet = Deep_QNet(input_size=len(env.reset()[0]),
     #                       hidden_size=128,
@@ -155,4 +167,21 @@ if __name__ == "__main__":
     #                   )
     #
     # train(env, agent, 100000000)
-    policy_train(env)
+    # policy_train(env)
+
+    dqcnn = DQCNN((1, 210, 160), env.action_space.n)
+
+    target_dcqnn = DQCNN((1, 210, 160), env.action_space.n)
+
+    agent = DeepAgent(model=dqcnn,
+                      target_model=target_dcqnn,
+                      memory_len= 25000,
+                      optimizer= optim.Adam(dqcnn.parameters(), lr=5e-5),
+                      criterion=nn.MSELoss(),
+                      gamma=0.9,
+                      batch=64,
+                      transform_func=image_transform,
+                      )
+
+    train(env, agent, 100000000)
+
