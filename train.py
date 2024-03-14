@@ -57,8 +57,7 @@ def train(env, agent, n_episodes):
                 # do some plotting with the loss and shit
 
 def policy_train(env):
-    np.random.seed(42)
-    random.seed(42)
+
     num_inputs = 128
     num_actions = env.action_space.n
 
