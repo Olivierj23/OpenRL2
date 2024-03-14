@@ -6,15 +6,16 @@ import numpy as np
 import os
 
 
+
 class Deep_QNet(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super().__init__()
         self.output_size = output_size
-        self.norm_layer = nn.LayerNorm(512)
-        self.linear1 = nn.Linear(input_size, 512)
-        self.linear2 = nn.Linear(512, 512)
+        self.norm_layer = nn.LayerNorm(hidden_size)
+        self.linear1 = nn.Linear(input_size, hidden_size)
+        self.linear2 = nn.Linear(hidden_size, hidden_size)
         self.linear4 = nn.Linear(512, 512)
-        self.linear3 = nn.Linear(512, output_size)
+        self.linear3 = nn.Linear(hidden_size, output_size)
         self.norm_layer2 = nn.LayerNorm(output_size)
         self.prelu = nn.PReLU()
 
@@ -38,21 +39,19 @@ class DQCNN(nn.Module):
     def __init__(self, input_shape, n_actions, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.conv = nn.Sequential(
-            nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=8, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
+            nn.Conv2d(input_shape[0], 16, kernel_size=8, stride=4, padding=0),
+            nn.PReLU(),
+            nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=0),
+            nn.PReLU(),
         )
 
         conv_out_size = self.get_conv_out_size(input_shape)
 
         self.fc = nn.Sequential(
-            nn.Flatten(start_dim=1),
-            nn.Linear(conv_out_size, 512),
-            nn.ReLU(),
-            nn.Linear(512, n_actions)
+            nn.Flatten(),
+            nn.Linear(conv_out_size, 256),
+            nn.PReLU(),
+            nn.Linear(256, n_actions),
         )
         self.output_size = n_actions
 
@@ -60,7 +59,7 @@ class DQCNN(nn.Module):
         return np.prod(self.conv(torch.rand(*image_dim)).data.shape)
 
     def forward(self, inp):
-        inp = torch.tensor(inp)
+
         x = self.conv(inp)
         x = self.fc(x)
         return x
