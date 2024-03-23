@@ -35,6 +35,35 @@ class Deep_QNet(nn.Module):
         file_name = os.path.join(model_folder_path, file_name)
         torch.save(self.state_dict(), file_name)
 
+class DuelingDeep_QNet(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super().__init__()
+        self.output_size = output_size
+        self.norm_layer = nn.LayerNorm(hidden_size)
+        self.linear1 = nn.Linear(input_size, hidden_size)
+        self.linear2 = nn.Linear(hidden_size, hidden_size)
+        self.linear4 = nn.Linear(256, 256)
+        self.V = nn.Linear(128, 1)
+        self.A = nn.Linear(128, output_size)
+        self.prelu = nn.PReLU()
+
+    def forward(self, x):
+        # x = self.norm_layer(x)
+        x = self.prelu(self.norm_layer(self.linear1(x)))
+        x = self.prelu(self.linear2(x))
+        V = self.V(x)
+        A = self.A(x)
+        Q = V + (A - A.mean(dim=1, keepdim=True))
+        return Q
+
+    def save(self, file_name='model.pth'):
+        model_folder_path = "./model_folder"
+        if not os.path.exists(model_folder_path):
+            os.makedirs(model_folder_path)
+
+        file_name = os.path.join(model_folder_path, file_name)
+        torch.save(self.state_dict(), file_name)
+
 class DQCNN(nn.Module):
     def __init__(self, input_shape, n_actions, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -63,6 +92,48 @@ class DQCNN(nn.Module):
         x = self.conv(inp)
         x = self.fc(x)
         return x
+
+    def save(self, file_name='model.pth'):
+        model_folder_path = "./model_folder"
+        if not os.path.exists(model_folder_path):
+            os.makedirs(model_folder_path)
+
+        file_name = os.path.join(model_folder_path, file_name)
+        torch.save(self.state_dict(), file_name)
+
+class DuelingDQCNN(nn.Module):
+    def __init__(self, input_shape, n_actions, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.conv = nn.Sequential(
+            nn.Conv2d(input_shape[0], 16, kernel_size=8, stride=4, padding=0),
+            nn.PReLU(),
+            nn.Conv2d(16, 32, kernel_size=4, stride=2, padding=0),
+            nn.PReLU(),
+        )
+
+        conv_out_size = self.get_conv_out_size(input_shape)
+
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(conv_out_size, 512),
+            nn.PReLU(),
+        )
+        self.output_size = n_actions
+
+        self.V = nn.Linear(512, 1)
+        self.A = nn.Linear(512, n_actions)
+
+    def get_conv_out_size(self, image_dim):
+        return np.prod(self.conv(torch.rand(*image_dim)).data.shape)
+
+    def forward(self, inp):
+
+        x = self.conv(inp)
+        x = self.fc(x)
+        V = self.V(x)
+        A = self.A(x)
+        Q = V + (A - A.mean(dim=1, keepdim=True))
+        return Q
 
     def save(self, file_name='model.pth'):
         model_folder_path = "./model_folder"

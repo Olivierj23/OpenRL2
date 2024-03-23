@@ -3,7 +3,7 @@ import rubiks_cube_gym
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from agents import DeepAgent, RandomAgent
-from model import Deep_QNet, DQCNN
+from model import Deep_QNet, DQCNN, DuelingDQCNN, DuelingDeep_QNet
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -12,6 +12,7 @@ import numpy as np
 writer = SummaryWriter()
 import random
 from atari_wrappers import make_atari, wrap_deepmind
+import time
 
 plt.ion()
 def train(env, agent, n_episodes):
@@ -23,12 +24,12 @@ def train(env, agent, n_episodes):
 
         counter = 0
         absolute_counter = 0
-        agent.n_episodes +=1
         if agent.n_frames >= 10000000:
             break
 
         while not done:
             print(agent.n_frames)
+            initial_time = time.time()
             action = agent.get_action(obs, raw=True)
             next_obs, reward, terminated, truncated, info = env.step(action)
             # if terminated:
@@ -36,7 +37,8 @@ def train(env, agent, n_episodes):
 
             agent.remember(obs, action, reward, next_obs, terminated)
 
-            if agent.n_frames > 10000:
+
+            if agent.n_frames > 50000:
                 agent.train_long_memory()
 
 
@@ -141,8 +143,7 @@ def image_transform(raw_image_data):
 def play(agent, env, n_episodes):
     reward_per_game = []
     batch_reward = []
-    agent.n_frames = 0
-    agent.epsilon = 0
+
     for episode in tqdm(range(n_episodes)):
         obs, info = env.reset()
         done = False
@@ -152,11 +153,12 @@ def play(agent, env, n_episodes):
 
 
         while not done:
-            print(agent.n_frames)
+            agent.epsilon = 0.1
             action = agent.get_action(obs, raw=True)
             next_obs, reward, terminated, truncated, info = env.step(action)
             # if terminated:
             #     reward = -1
+
 
             done = terminated
             obs = next_obs
@@ -164,6 +166,7 @@ def play(agent, env, n_episodes):
             absolute_counter += 1
             if done:
                 reward_per_game.append(reward)
+                # writer.add_scalar("Reward/Training", counter, len(reward_per_game))
                 if len(reward_per_game) > 50:
                     batch_reward.append(sum(reward_per_game[-50:]) / 50)
                 # do some plotting with the loss and shit
@@ -178,55 +181,56 @@ def play(agent, env, n_episodes):
 if __name__ == "__main__":
     # env = gym.make('CartPole-v0', render_mode="human")
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    env = make_atari('PongNoFrameskip-v4', render=True, difficulty=3)
+    env = make_atari('PongNoFrameskip-v4', render=False)
     env = wrap_deepmind(env, frame_stack=True, scale=True)
 
     # print(image_transform(env.reset()[0]))
 
     # agent = RandomAgent(env.action_space.n)
-    # deep_qnet = Deep_QNet(input_size=len(env.reset()[0]),
+    # deep_qnet = DuelingDeep_QNet(input_size=len(env.reset()[0]),
     #                       hidden_size=128,
     #                       output_size=env.action_space.n)
     #
-    # target_qnet= Deep_QNet(input_size=len(env.reset()[0]),
+    # deep_qnet.load_state_dict(torch.load("model_folder/model.pth"))
+    #
+    # target_qnet= DuelingDeep_QNet(input_size=len(env.reset()[0]),
     #                       hidden_size=128,
     #                       output_size=env.action_space.n)
-    # def identity(x):
-    #     return x
     # agent = DeepAgent(model=deep_qnet.to(device),
     #                   target_model=target_qnet.to(device),
-    #                   memory_len= 25000,
-    #                   optimizer= optim.RMSprop(deep_qnet.parameters(), lr=1e-4, momentum=0.95),
-    #                   criterion=nn.MSELoss(),
+    #                   memory_len= 100000,
+    #                   optimizer= optim.Adam(deep_qnet.parameters(), lr=1e-5),
+    #                   criterion=nn.HuberLoss(),
     #                   gamma=0.9,
     #                   batch=64,
-    #                   transform_func=identity,
+    #                   transform_func= lambda x:x,
     #                   device= device
     #                   )
-    #
+
     # train(env, agent, 100000000)
     # policy_train(env)
 
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    dqcnn = DQCNN((4, 84, 84), env.action_space.n)
-    dqcnn.load_state_dict(torch.load("model_folder/model.pth"))
+    dqcnn = DuelingDQCNN((4, 84, 84), env.action_space.n)
+    # dqcnn.load_state_dict(torch.load("model_folder/model.pth"))
+    # dqcnn.eval()
     dqcnn.to(device)
 
-    target_dcqnn = DQCNN((4, 84, 84), env.action_space.n)
+    target_dcqnn = DuelingDQCNN((4, 84, 84), env.action_space.n)
     target_dcqnn.to(device)
 
     agent = DeepAgent(model=dqcnn,
                       target_model=target_dcqnn,
-                      memory_len=10000,
-                      optimizer=optim.Adam(dqcnn.parameters(), lr=1e-4),# optim.RMSprop(dqcnn.parameters(), lr=0.000025, momentum=0.95)
+                      memory_len=100000,
+                      optimizer=optim.Adam(dqcnn.parameters(), lr=0.00025),# optim.RMSprop(dqcnn.parameters(), lr=0.000025, momentum=0.95)
                       criterion=nn.HuberLoss(),
                       gamma=0.99,
-                      batch=32,
+                      batch=64,
                       transform_func=image_transform,
                       device=device
                       )
 
-    play(agent, env, 1000)
-    # train(env, agent, 100000000)
+    # play(agent, env, 1000)
+    train(env, agent, 100000000)
 
