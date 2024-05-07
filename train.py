@@ -29,7 +29,6 @@ def train(env, agent, n_episodes):
 
         while not done:
             print(agent.n_frames)
-            initial_time = time.time()
             action = agent.get_action(obs, raw=True)
             next_obs, reward, terminated, truncated, info = env.step(action)
             # if terminated:
@@ -63,37 +62,45 @@ def policy_train(env):
     num_inputs = 128
     num_actions = env.action_space.n
 
-    model = torch.nn.Sequential(
-        torch.nn.Linear(num_inputs, 128, bias=False, dtype=torch.float32),
-        torch.nn.ReLU(),
-        torch.nn.Linear(128, num_actions, bias=False, dtype=torch.float32),
-        torch.nn.Softmax(dim=1)
-    )
-    epsilon = 0.01
+    # model = torch.nn.Sequential(
+    #     torch.nn.Linear(num_inputs, 128, bias=False, dtype=torch.float32),
+    #     torch.nn.ReLU(),
+    #     torch.nn.Linear(128, num_actions, bias=False, dtype=torch.float32),
+    #     torch.nn.Softmax(dim=1)
+    # )
+
+    model = DuelingDQCNN((4, 84, 84), env.action_space.n)
+
+    # epsilon = 0.01
     loss_func = nn.CrossEntropyLoss()
 
-    def run_episode(max_steps_per_episode=10000, render=False):
+    softmax = torch.nn.Softmax(dim=0)
+
+    def run_episode(max_steps_per_episode=100000, render=False):
         states, actions, probs, rewards = [], [], [], []
         state, info = env.reset()
+        state = image_transform(state)
         for _ in range(max_steps_per_episode):
-            action_probs = model(torch.tensor(torch.from_numpy(np.expand_dims(state, 0)), dtype=torch.float))[0]
+            action_probs = softmax(model(torch.tensor(torch.from_numpy(np.expand_dims(state, 0)), dtype=torch.float))[0])
             print(np.squeeze(action_probs.detach().numpy()))
             action = np.random.choice(num_actions, p=np.squeeze(action_probs.detach().numpy()))
-            if random.random() > epsilon:
-                action = random.randint(0,num_actions- 1)
+            # if random.random() > epsilon:
+            #     action = random.randint(0, num_actions- 1)
             print(action)
             nstate, reward, done, terminated, info = env.step(action)
-            env.render()
-            if done or terminated:
-                break
 
             states.append(state)
             actions.append(action)
             probs.append(action_probs.detach().numpy())
             rewards.append(reward)
-            state = nstate
+            state = image_transform(nstate)
 
-        return np.vstack(states), np.vstack(actions), np.vstack(probs), np.vstack(rewards)
+            if done or terminated:
+                break
+
+
+        print(states[0].shape)
+        return np.stack(states, axis=0), np.vstack(actions), np.vstack(probs), np.vstack(rewards)
 
 
     eps = 0.0001
@@ -108,7 +115,7 @@ def policy_train(env):
             ret = (ret - np.mean(ret)) / (np.std(ret) + eps)
         return ret
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.00001)
 
     def train_on_batch(x, y):
         x = torch.tensor( torch.from_numpy(x),dtype=torch.float)
@@ -123,8 +130,8 @@ def policy_train(env):
     alpha = 1e-4
 
     history = []
-    for epoch in range(300):
-        states, actions, probs, rewards = run_episode(render=True)
+    for epoch in range(100000000):
+        states, actions, probs, rewards = run_episode(render=False)
         print(states.dtype)
         one_hot_actions = np.eye(num_actions)[actions.T][0]
         gradients = one_hot_actions - probs
@@ -132,10 +139,11 @@ def policy_train(env):
         gradients *= dr
         target = alpha * np.vstack([gradients]) + probs
         train_on_batch(states, target)
-        writer.add_scalar("Reward/Training",np.sum(rewards), len(history))
+        writer.add_scalar("Reward/Training", np.sum(rewards), len(history))
         history.append(np.sum(rewards))
         if epoch % 100 == 0:
             print(f"{epoch} -> {np.sum(rewards)}")
+            model.save()
 
 def image_transform(raw_image_data):
     return np.swapaxes(raw_image_data, 0, 2)
@@ -181,7 +189,7 @@ def play(agent, env, n_episodes):
 if __name__ == "__main__":
     # env = gym.make('CartPole-v0', render_mode="human")
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    env = make_atari('PongNoFrameskip-v4', render=False)
+    env = make_atari('BreakoutNoFrameskip-v4', render=True)
     env = wrap_deepmind(env, frame_stack=True, scale=True)
 
     # print(image_transform(env.reset()[0]))
@@ -210,11 +218,11 @@ if __name__ == "__main__":
     # train(env, agent, 100000000)
     # policy_train(env)
 
-    # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     dqcnn = DuelingDQCNN((4, 84, 84), env.action_space.n)
-    # dqcnn.load_state_dict(torch.load("model_folder/model.pth"))
-    # dqcnn.eval()
+    dqcnn.load_state_dict(torch.load("model_folder/model.pth"))
+    dqcnn.eval()
     dqcnn.to(device)
 
     target_dcqnn = DuelingDQCNN((4, 84, 84), env.action_space.n)
@@ -222,8 +230,8 @@ if __name__ == "__main__":
 
     agent = DeepAgent(model=dqcnn,
                       target_model=target_dcqnn,
-                      memory_len=100000,
-                      optimizer=optim.Adam(dqcnn.parameters(), lr=0.00025),# optim.RMSprop(dqcnn.parameters(), lr=0.000025, momentum=0.95)
+                      memory_len=1000000,
+                      optimizer=optim.Adam(dqcnn.parameters(), lr=0.000025),# optim.RMSprop(dqcnn.parameters(), lr=0.000025, momentum=0.95)
                       criterion=nn.HuberLoss(),
                       gamma=0.99,
                       batch=64,
@@ -231,6 +239,8 @@ if __name__ == "__main__":
                       device=device
                       )
 
-    # play(agent, env, 1000)
-    train(env, agent, 100000000)
+    play(agent, env, 1000)
+    # train(env, agent, 100000000)
+
+    # policy_train(env)
 

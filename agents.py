@@ -12,14 +12,14 @@ import time
 class DeepAgent:
     def __init__(self, model, target_model, memory_len, optimizer, criterion, gamma, batch, transform_func, device):
         self.n_episodes = 0
-        self.big_frames = 2000000
+        self.big_frames = 1000000
         self.epsilon = 1
         self.beta_decay = 0.7
         self.gamma = gamma
-        # self.memory = ReplayMemory(max_size=memory_len) # deque(maxlen=memory_len)
+        self.memory = ReplayMemory(max_size=memory_len) # deque(maxlen=memory_len)
         # self.memory = PrioritizedExperienceReplayBuffer(batch_size=batch, buffer_size=memory_len, alpha=0.4)
         #self.memory = ReplayBuffer(memory_len, alpha=0.7)
-        self.memory = PrioritizedReplayBuffer(size=memory_len, alpha=0.7)
+        # self.memory = PrioritizedReplayBuffer(size=memory_len, alpha=0.7)
         self.model = model
         self.target_model = target_model
         self.gamma = gamma
@@ -35,9 +35,9 @@ class DeepAgent:
         return self.transform_func(raw_state)
 
     def remember(self, raw_state, action, reward, next_state, done):
-        # self.memory.append((self.get_state(raw_state), action, reward, self.get_state(next_state), done))
+        self.memory.append((self.get_state(raw_state), action, reward, self.get_state(next_state), done))
         # experience = Experience(self.get_state(raw_state), action, reward, self.get_state(next_state), done)
-        self.memory.add(self.get_state(raw_state), action, reward, self.get_state(next_state), done)
+        # self.memory.add(self.get_state(raw_state), action, reward, self.get_state(next_state), done)
         # self.memory.add(experience)
         if done:
             self.n_episodes += 1
@@ -50,21 +50,22 @@ class DeepAgent:
 
     def train_long_memory(self):
         r = max((self.big_frames - self.n_frames)/self.big_frames, 0)
-        self.epsilon = (1-0.1)*r + 0.1
+        self.epsilon = (1-0.2)*r + 0.2
 
-        if len(self.memory) > self.batch_size:
-            beta = self.exponential_annealing_schedule(self.n_episodes, self.beta_decay)
-            states, raw_actions, rewards, next_states, dones, weights, idxs = self.memory.sample(self.batch_size, beta)
+        if self.memory.size > self.batch_size:
+            mini_sample = self.memory.sample(self.batch_size)
+            # beta = self.exponential_annealing_schedule(self.n_episodes, self.beta_decay)
+            # states, raw_actions, rewards, next_states, dones, weights, idxs = self.memory.sample(self.batch_size, beta)
             # idxs, mini_sample, weights = self.memory.sample(beta)
             # idxs, mini_sample, weights = self.memory.sample(self.batch_size, beta)
-            # states, raw_actions, rewards, next_states, dones = zip(*mini_sample)
+            states, raw_actions, rewards, next_states, dones = zip(*mini_sample)
             # print(mini_sample["obs"].shape)
             # states, raw_actions, rewards, next_states, dones = mini_sample["obs"], mini_sample["action"], mini_sample["reward"], \
             #      mini_sample["next_obs"], mini_sample["done"]
 
 
             self.train_step(np.array(states), np.array(raw_actions), np.array(rewards), np.array(next_states),
-                            np.array(dones), idxs,  np.array(weights))
+                            np.array(dones), None,  None)
 
         else:
             pass
@@ -149,20 +150,21 @@ class DeepAgent:
         print(target_q_values)
         # loss = self.criterion(Q_expected.T, Q_targets)
 
-        deltas = target_q_values - input_q_values
-        priorities = (deltas.abs()
-                      .cpu()
-                      .detach()
-                      .numpy()
-                      .flatten())
+        # deltas = target_q_values - input_q_values
+        # priorities = (deltas.abs()
+        #               .cpu()
+        #               .detach()
+        #               .numpy()
+        #               .flatten())
 
 
-        self.memory.update_priorities(idxs, priorities + 1e-6)
-        weights = torch.tensor(weights, device=self.device)
+        # self.memory.update_priorities(idxs, priorities + 1e-6)
+        # weights = torch.tensor(weights, device=self.device)
 
-        loss = torch.mean(self.criterion(input_q_values, target_q_values) * weights)
+        # loss = torch.mean(self.criterion(input_q_values, target_q_values) * weights)
+        loss = self.criterion(input_q_values, target_q_values)
         loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
 
         self.optimizer.step()
 
